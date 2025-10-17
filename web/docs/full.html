@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>YTMP3 API – Full Documentation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Inter,Arial,sans-serif;max-width:980px;margin:32px auto;padding:0 16px;color:#1d2430}
+    code,pre{background:#f6f8fb;border:1px solid #e5eaf3;border-radius:6px;padding:2px 6px}
+    pre{padding:12px;overflow:auto}
+    h1{font-size:26px}
+    h2{font-size:20px;margin-top:24px}
+    table{border-collapse:collapse;width:100%}
+    td,th{border:1px solid #e5eaf3;padding:8px;text-align:left}
+    .muted{color:#657089}
+  </style>
+</head>
+<body>
+  <h1>YouTube to MP3 API – Documentation</h1>
+  <p class="muted">Two-step flow with sessions: <strong>/prepare → /convert</strong>. Background download (yt-dlp) and MP3 convert (ffmpeg). Redis-backed sessions optional.</p>
+
+  <h2>Base URL</h2>
+  <pre>http://localhost:8080</pre>
+
+  <h2>Endpoints</h2>
+  <h3>POST /prepare</h3>
+  <p>Fetch metadata and create a session; starts background download.</p>
+  <pre>{
+  "url": "https://www.youtube.com/watch?v=VIDEO_ID"
+}</pre>
+  <pre>{
+  "conversion_id": "conv_12345",
+  "status": "created",
+  "metadata": {"title":"...","duration":180,"thumbnail":"..."},
+  "message": "Metadata fetched successfully. Stream is downloading in background."
+}</pre>
+
+  <h3>POST /convert</h3>
+  <p>Asynchronously enqueue the conversion. Returns <code>202 Accepted</code> with queue position; workers start once the download is ready.</p>
+  <pre>{
+  "conversion_id": "conv_12345",
+  "quality": "320",
+  "start_time": "00:01:30",  // optional
+  "end_time": "00:05:00"      // optional
+}</pre>
+  <pre>{
+  "conversion_id": "conv_12345",
+  "status": "queued_for_conversion",
+  "queue_position": 2,
+  "message": "Conversion request accepted and queued. Waiting for download to finish."
+  }</pre>
+
+  <h3>GET /status/{conversion_id}</h3>
+  <p>Poll to track download and conversion progress.</p>
+  <pre>{
+  "conversion_id": "conv_12345",
+  "status": "completed|preparing|downloading|converting|failed|queued_for_conversion",
+  "download_progress": 85,
+  "conversion_progress": 100,
+  "download_url": "/download/conv_12345.mp3",
+  "queue_position": 2,
+  "error": ""
+}</pre>
+
+  <h3>GET /download/{conversion_id}.mp3</h3>
+  <p>Streams MP3 with HTTP Range support. Use <code>Range: bytes=0-1023</code> for partial download.</p>
+
+  <h3>DELETE /delete/{conversion_id}</h3>
+  <p>Removes session and files.</p>
+
+  <h3>GET /health</h3>
+  <p>Quick service health and counters.</p>
+
+  <h3>GET /metrics</h3>
+  <p>JSON metrics. Use <code>/metrics/prom</code> when Prometheus export is enabled.</p>
+
+  <h2>Security</h2>
+  <ul>
+    <li>Optional <code>X-API-Key</code> header; set <code>REQUIRE_API_KEY=true</code> and list <code>API_KEYS</code>.</li>
+    <li>CORS configurable via <code>ALLOWED_ORIGINS</code>.</li>
+    <li>Global and per-IP rate limiting.</li>
+  </ul>
+
+  <h2>Configuration (env)</h2>
+  <pre>WORKER_POOL_SIZE=20
+JOB_QUEUE_CAPACITY=1000
+MAX_JOB_RETRIES=3
+REQUESTS_PER_SECOND=100
+BURST_SIZE=200
+PER_IP_RPS=10
+PER_IP_BURST=20
+REDIS_ADDR=localhost:6379
+REDIS_PASSWORD=
+REDIS_DB=0
+YTDLP_TIMEOUT=90s
+FFMPEG_MIN_TIMEOUT=15m
+FFMPEG_MAX_TIMEOUT=60m
+FFMPEG_MODE=CBR
+FFMPEG_CBR_BITRATE=192k
+FFMPEG_VBR_Q=5
+FFMPEG_THREADS=0
+ALWAYS_DOWNLOAD=false
+DOWNLOAD_THRESHOLD=10m
+YTDLP_DOWNLOAD_CONCURRENCY=8
+YTDLP_DOWNLOAD_TIMEOUT=30m
+CONVERSIONS_DIR=/tmp/conversions
+UNCONVERTED_FILE_TTL=5m
+CONVERTED_FILE_TTL=10m
+REQUIRE_API_KEY=false
+API_KEYS=
+ALLOWED_ORIGINS=*
+ADMIN_USER=admin
+ADMIN_PASS=password
+OEMBED_ENDPOINT=https://www.youtube.com/oembed
+DURATION_API_ENDPOINT=https://ds2.ezsrv.net/api/getDuration
+MAX_CONCURRENT_DOWNLOADS=20
+MAX_CONCURRENT_CONVERSIONS=20</pre>
+
+  <h2>Quality options</h2>
+  <pre>128, 192, 256, 320</pre>
+
+  <h2>Flow</h2>
+  <ol>
+    <li>Call <strong>/prepare</strong> with a direct video URL (avoid playlist/radio).</li>
+    <li>Receive <code>conversion_id</code>; background download starts.</li>
+    <li>Call <strong>/convert</strong> with <code>conversion_id</code> (+ quality, optional trim). Server returns <code>202 Accepted</code> with <code>queue_position</code>.</li>
+    <li>Poll <strong>/status</strong> every 2–5s until <code>status=completed</code>. While queued, <code>queue_position</code> may be present.</li>
+    <li>Download from <strong>/download/{id}.mp3</strong> (supports Range).</li>
+  </ol>
+
+  <h2>Notes</h2>
+  <ul>
+    <li>Dedup prevents duplicate sessions for same URL (memory/Redis).</li>
+    <li>Cleanup removes old files after TTLs.</li>
+    <li>If conversion queued before download complete, it auto-requeues until ready.</li>
+  </ul>
+</body>
+</html>

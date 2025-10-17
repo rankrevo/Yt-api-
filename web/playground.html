@@ -1,0 +1,465 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>YTMP3 API Playground</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{--bg:#0f1222;--card:#161a2f;--muted:#99a3b3;--text:#e8ecf1;--accent:#6ee7b7;--accent2:#60a5fa;--danger:#f87171}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Inter,Arial,sans-serif;background:linear-gradient(180deg,#0f1222,#0d1326 60%,#0a122b);color:var(--text)}
+    header{padding:24px 16px;text-align:center}
+    h1{margin:0;font-size:24px}
+    main{max-width:1200px;margin:0 auto;padding:16px;display:grid;gap:16px}
+    .card{background:var(--card);border:1px solid #222846;border-radius:12px;padding:16px}
+    label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}
+    input,select,button,textarea{width:100%;border-radius:10px;border:1px solid #28314d;background:#0f1429;color:var(--text);padding:10px 12px}
+    button{cursor:pointer;background:linear-gradient(180deg,#1f2a44,#1a2642);border:1px solid #2b3b66;color:#dce7ff}
+    button.primary{background:linear-gradient(180deg,#1b4332,#0f5132);border:1px solid #1f6f54;color:#d8ffe8}
+    button.secondary{background:linear-gradient(180deg,#1b2a44,#17223c)}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .muted{color:var(--muted)}
+    .progress{height:10px;background:#0d1430;border-radius:999px;overflow:hidden;border:1px solid #28314d}
+    .bar{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .25s ease}
+    .actions{display:flex;gap:8px}
+    pre{white-space:pre-wrap;word-break:break-word;background:#0b1022;border:1px solid #28314d;border-radius:8px;padding:10px;max-height:260px;overflow:auto}
+    a.download{display:inline-flex;align-items:center;gap:8px;padding:10px 12px;background:#11203a;border:1px solid #284363;border-radius:8px;color:#cfe7ff;text-decoration:none}
+    .grid-1{grid-template-columns:1fr}
+    .grid-2{grid-template-columns:1fr 1fr}
+    @media (max-width: 980px){
+      .grid-2{grid-template-columns:1fr}
+    }
+    footer{max-width:1100px;margin:24px auto;padding:0 16px;color:#8ea3c2}
+    code{background:#0b1022;border:1px solid #28314d;padding:2px 6px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>YTMP3 API Playground (localhost:8080)</h1>
+    <div class="muted">Two-step: prepare → convert → download</div>
+  </header>
+  <main class="grid-2">
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>API Base</label>
+          <input id="base" value="http://localhost:8080" />
+        </div>
+        <div>
+          <label>API Key (optional)</label>
+          <input id="apiKey" placeholder="X-API-Key if enabled" />
+        </div>
+      </div>
+      <label style="margin-top:8px">YouTube URL</label>
+      <input id="url" placeholder="https://www.youtube.com/watch?v=..." />
+
+      <div class="row" style="margin-top:8px">
+        <div>
+          <label>Quality</label>
+          <select id="quality">
+            <option value="128">128</option>
+            <option value="192">192</option>
+            <option value="256">256</option>
+            <option value="320" selected>320</option>
+          </select>
+        </div>
+        <div>
+          <label>Time Range (optional)</label>
+          <input id="range" placeholder="start-end e.g. 00:01:30-00:03:00" />
+        </div>
+      </div>
+
+      <div class="actions" style="margin:12px 0">
+        <button class="primary" id="btnStart">Prepare + Convert</button>
+        <button class="secondary" id="btnStatus">Check Status</button>
+        <button id="btnHealth">Health</button>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Download Progress</label>
+          <div class="progress"><div id="dlBar" class="bar"></div></div>
+        </div>
+        <div>
+          <label>Conversion Progress</label>
+          <div class="progress"><div id="cvBar" class="bar"></div></div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="muted">Conversion ID</div>
+        <div id="cid" style="font-family:monospace"></div>
+      </div>
+
+      <div style="margin-top:10px">
+        <a id="download" class="download" href="#" target="_blank" style="display:none">Download MP3</a>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <div>
+          <label>Last Response</label>
+          <pre id="resp">(none)</pre>
+        </div>
+        <div>
+          <label>Metrics</label>
+          <pre id="metrics">(none)</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Endpoint Tester</h2>
+      <div class="muted" style="margin-bottom:10px">Build and send individual requests; copy cURL; inspect responses.</div>
+
+      <div class="row">
+        <div>
+          <label>Conversion ID</label>
+          <input id="cidInput" placeholder="conv_..." />
+        </div>
+        <div>
+          <label>Quality</label>
+          <select id="quality2">
+            <option value="128">128</option>
+            <option value="192">192</option>
+            <option value="256">256</option>
+            <option value="320" selected>320</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:8px">
+        <div>
+          <label>Start-End (optional)</label>
+          <input id="range2" placeholder="00:01:30-00:03:00" />
+        </div>
+        <div class="actions" style="align-items:flex-end">
+          <button id="btnPrepareOnly">POST /prepare</button>
+          <button id="btnConvertOnly">POST /convert</button>
+          <button id="btnStatusOnly">GET /status</button>
+          <button id="btnDeleteOnly">DELETE /delete</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:8px">
+        <div>
+          <label>Download</label>
+          <div class="actions">
+            <button id="btnDownloadOnly">GET /download</button>
+            <button id="btnRangeTest" class="secondary">Range 0-1023 test</button>
+          </div>
+        </div>
+        <div>
+          <label>cURL</label>
+          <pre id="curl">(click any endpoint to see cURL)</pre>
+          <div class="actions"><button id="btnCopyCurl" class="secondary">Copy cURL</button></div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <label>Raw Response</label>
+        <pre id="resp2">(none)</pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Health, Metrics, Stats</h2>
+      <div class="actions" style="margin-bottom:8px">
+        <button id="btnHealth2">GET /health</button>
+        <button id="btnMetrics">GET /metrics</button>
+        <button id="btnStats">GET /stats</button>
+        <label style="display:inline-flex;gap:6px;align-items:center;margin-left:auto"><input type="checkbox" id="autoMetrics"> Auto refresh metrics</label>
+      </div>
+      <div class="row">
+        <div>
+          <label>Health</label>
+          <pre id="health">(none)</pre>
+        </div>
+        <div>
+          <label>Metrics/Stats</label>
+          <pre id="metrics2">(none)</pre>
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <label>History</label>
+        <pre id="history">(empty)</pre>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Tip: For playlists/radio links, use a direct video URL. Range requests are supported; the Download link streams via HTTP Range.
+  </footer>
+
+  <script>
+    const el = id => document.getElementById(id);
+    const setBar = (id, v) => { el(id).style.width = Math.max(0, Math.min(100, Number(v)||0)) + '%'; };
+
+    function buildHeaders(extra = {}) {
+      const headers = { ...extra };
+      if (!('Content-Type' in headers)) headers['Content-Type'] = 'application/json';
+      const apiKey = el('apiKey').value.trim();
+      if (apiKey) headers['X-API-Key'] = apiKey;
+      return headers;
+    }
+
+    function normalizeBase() {
+      return el('base').value.trim().replace(/\/$/, '');
+    }
+
+    function show(obj, targetId='resp') {
+      el(targetId).textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+    }
+
+    async function request(method, path, body, opts = {}) {
+      const baseUrl = normalizeBase();
+      const url = baseUrl + path;
+      const init = { method, headers: buildHeaders(opts.headers || {}) };
+      if (body !== undefined && body !== null && init.headers['Content-Type'] === 'application/json') {
+        init.body = JSON.stringify(body);
+      } else if (body !== undefined && body !== null) {
+        init.body = body;
+      }
+      const t0 = performance.now();
+      const res = await fetch(url, init);
+      const t1 = performance.now();
+      const ms = Math.round(t1 - t0);
+      const text = await res.text();
+      let json;
+      try { json = JSON.parse(text); } catch { json = { raw: text }; }
+      return { ok: res.ok, status: res.status, ms, headers: res.headers, json, text, url, method, body: body };
+    }
+
+    function buildCurl({ method, url, body, headers }) {
+      const lines = [
+        `curl -X ${method} '${url}' \\\`,
+      ];
+      const apiKey = el('apiKey').value.trim();
+      const extraHeaders = [];
+      if ((headers && headers['Content-Type']) || method === 'POST' || method === 'PUT' || method === 'PATCH') {
+        extraHeaders.push("-H 'Content-Type: application/json'");
+      }
+      if (apiKey) { extraHeaders.push(`-H 'X-API-Key: ${apiKey}'`); }
+      if (extraHeaders.length) { lines.push('  ' + extraHeaders.join(' \\\') ); }
+      if (body && typeof body === 'object') {
+        const payload = JSON.stringify(body).replaceAll('"', '\\"');
+        lines.push(`  -d \"${payload}\"`);
+      }
+      return lines.join('\n');
+    }
+
+    function persist() {
+      const data = {
+        base: el('base').value,
+        apiKey: el('apiKey').value,
+        url: el('url').value,
+        quality: el('quality').value,
+        range: el('range').value,
+        lastCID: el('cid').textContent.trim(),
+        quality2: el('quality2').value,
+        range2: el('range2').value,
+        cidInput: el('cidInput').value,
+      };
+      localStorage.setItem('ytmp3_playground', JSON.stringify(data));
+    }
+
+    function restore() {
+      try {
+        const raw = localStorage.getItem('ytmp3_playground');
+        if (!raw) return;
+        const d = JSON.parse(raw);
+        if (d.base) el('base').value = d.base;
+        if (d.apiKey) el('apiKey').value = d.apiKey;
+        if (d.url) el('url').value = d.url;
+        if (d.quality) el('quality').value = d.quality;
+        if (d.range) el('range').value = d.range;
+        if (d.lastCID) el('cid').textContent = d.lastCID;
+        if (d.quality2) el('quality2').value = d.quality2;
+        if (d.range2) el('range2').value = d.range2;
+        if (d.cidInput) el('cidInput').value = d.cidInput;
+      } catch {}
+    }
+
+    function setDownloadLink(downloadPath) {
+      if (!downloadPath) return;
+      const full = normalizeBase() + downloadPath;
+      const a = el('download'); a.href = full; a.style.display = 'inline-flex';
+    }
+
+    function parseRange(value) {
+      let start_time = '', end_time = '';
+      if (value && value.includes('-')) {
+        const [s,e] = value.split('-');
+        start_time = (s || '').trim();
+        end_time = (e || '').trim();
+      }
+      return { start_time, end_time };
+    }
+
+    async function uiPrepare(url) {
+      const res = await request('POST', '/prepare', { url });
+      show(res.json, 'resp');
+      if (res.ok && res.json.conversion_id) {
+        el('cid').textContent = res.json.conversion_id;
+        el('cidInput').value = res.json.conversion_id;
+      }
+      el('curl').textContent = buildCurl(res);
+      persist();
+      return res;
+    }
+
+    async function uiConvert(conversionId, quality, rangeStr, target='resp') {
+      const { start_time, end_time } = parseRange(rangeStr);
+      const body = { conversion_id: conversionId, quality, start_time, end_time };
+      const res = await request('POST', '/convert', body);
+      show(res.json, target);
+      el('curl').textContent = buildCurl(res);
+      persist();
+      return res;
+    }
+
+    async function uiStatus(conversionId, target='resp') {
+      const res = await request('GET', '/status/' + encodeURIComponent(conversionId));
+      if (res.ok) {
+        setBar('dlBar', res.json.download_progress);
+        setBar('cvBar', res.json.conversion_progress);
+        if (res.json.download_url) setDownloadLink(res.json.download_url);
+      }
+      show(res.json, target);
+      el('curl').textContent = buildCurl(res);
+      persist();
+      return res;
+    }
+
+    async function uiDelete(conversionId, target='resp2') {
+      const res = await request('DELETE', '/delete/' + encodeURIComponent(conversionId));
+      show(res.json, target);
+      el('curl').textContent = buildCurl(res);
+      persist();
+      return res;
+    }
+
+    async function uiHealth(target='metrics') {
+      const res = await request('GET', '/health');
+      show(res.json, target);
+      el('curl').textContent = buildCurl(res);
+      return res;
+    }
+
+    async function uiMetrics(target='metrics2') {
+      const res = await request('GET', '/metrics');
+      show(res.json, target);
+      el('curl').textContent = buildCurl(res);
+      return res;
+    }
+
+    async function uiStats(target='metrics2') {
+      const res = await request('GET', '/stats');
+      show(res.json, target);
+      el('curl').textContent = buildCurl(res);
+      return res;
+    }
+
+    async function uiRangeTest(conversionId) {
+      const downloadPath = `/download/${encodeURIComponent(conversionId)}.mp3`;
+      const url = normalizeBase() + downloadPath;
+      const headers = buildHeaders({});
+      delete headers['Content-Type'];
+      headers['Range'] = 'bytes=0-1023';
+      const t0 = performance.now();
+      const res = await fetch(url, { headers });
+      const t1 = performance.now();
+      const ab = await res.arrayBuffer();
+      const bytes = ab.byteLength;
+      show({ status: res.status, bytes, ms: Math.round(t1 - t0) }, 'resp2');
+      el('curl').textContent = `curl -H 'Range: bytes=0-1023' '${url}' -o /dev/null -s -w '%{http_code} %{size_download}\n'`;
+      return { ok: res.ok, status: res.status, bytes };
+    }
+
+    el('btnStart').addEventListener('click', async () => {
+      const url = el('url').value.trim();
+      if (!url) { alert('Enter a YouTube video URL'); return; }
+      el('download').style.display = 'none'; setBar('dlBar', 0); setBar('cvBar', 0);
+      const prep = await uiPrepare(url);
+      if (prep.ok && prep.json.conversion_id) {
+        const cid = prep.json.conversion_id;
+        await uiConvert(cid, el('quality').value, el('range').value);
+        const tick = async () => {
+          const s = await uiStatus(cid);
+          const st = s.json.status;
+          if (st !== 'completed' && st !== 'failed') setTimeout(tick, 3000);
+        };
+        setTimeout(tick, 1500);
+      }
+    });
+
+    el('btnStatus').addEventListener('click', async () => {
+      const cid = el('cid').textContent.trim(); if (!cid) { alert('No conversion_id yet'); return; }
+      await uiStatus(cid);
+    });
+
+    el('btnHealth').addEventListener('click', async () => { await uiHealth('metrics'); });
+
+    // Endpoint tester bindings
+    el('btnPrepareOnly').addEventListener('click', async () => {
+      const url = el('url').value.trim(); if (!url) { alert('Enter YouTube URL'); return; }
+      const res = await uiPrepare(url); show(res.json, 'resp2');
+    });
+
+    el('btnConvertOnly').addEventListener('click', async () => {
+      const cid = (el('cidInput').value || el('cid').textContent).trim(); if (!cid) { alert('Provide conversion_id'); return; }
+      const res = await uiConvert(cid, el('quality2').value, el('range2').value, 'resp2'); show(res.json, 'resp2');
+    });
+
+    el('btnStatusOnly').addEventListener('click', async () => {
+      const cid = (el('cidInput').value || el('cid').textContent).trim(); if (!cid) { alert('Provide conversion_id'); return; }
+      await uiStatus(cid, 'resp2');
+    });
+
+    el('btnDeleteOnly').addEventListener('click', async () => {
+      const cid = (el('cidInput').value || el('cid').textContent).trim(); if (!cid) { alert('Provide conversion_id'); return; }
+      await uiDelete(cid, 'resp2');
+    });
+
+    el('btnDownloadOnly').addEventListener('click', async () => {
+      const cid = (el('cidInput').value || el('cid').textContent).trim(); if (!cid) { alert('Provide conversion_id'); return; }
+      setDownloadLink(`/download/${encodeURIComponent(cid)}.mp3`);
+    });
+
+    el('btnRangeTest').addEventListener('click', async () => {
+      const cid = (el('cidInput').value || el('cid').textContent).trim(); if (!cid) { alert('Provide conversion_id'); return; }
+      await uiRangeTest(cid);
+    });
+
+    el('btnHealth2').addEventListener('click', async () => { await uiHealth('health'); });
+    el('btnMetrics').addEventListener('click', async () => { await uiMetrics('metrics2'); });
+    el('btnStats').addEventListener('click', async () => { await uiStats('metrics2'); });
+
+    // Auto metrics refresh
+    let metricsTimer = null;
+    el('autoMetrics').addEventListener('change', (e) => {
+      if (e.target.checked) {
+        metricsTimer = setInterval(() => { uiMetrics('metrics2'); }, 2000);
+      } else {
+        if (metricsTimer) { clearInterval(metricsTimer); metricsTimer = null; }
+      }
+    });
+
+    // Persist inputs on change
+    ['base','apiKey','url','quality','range','quality2','range2','cidInput'].forEach(id => {
+      el(id).addEventListener('change', persist);
+      el(id).addEventListener('input', persist);
+    });
+
+    // Copy cURL
+    el('btnCopyCurl').addEventListener('click', async () => {
+      const txt = el('curl').textContent || '';
+      if (!txt || txt === '(click any endpoint to see cURL)') return;
+      try { await navigator.clipboard.writeText(txt); } catch {}
+    });
+
+    // Restore previous session on load
+    restore();
+  </script>
+</body>
+</html>

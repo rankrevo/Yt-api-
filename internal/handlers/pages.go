@@ -1,0 +1,5 @@
+package handlers
+
+const docsHTML = `<!doctype html><html><head><meta charset="utf-8"><title>YTMP3 API Docs</title><style>body{font-family:system-ui, sans-serif;max-width:900px;margin:40px auto;padding:0 16px}code{background:#f4f4f4;padding:2px 6px;border-radius:4px}</style></head><body><h1>YouTube to MP3 API</h1><p>Endpoints:</p><ul><li><code>POST /prepare</code></li><li><code>POST /convert</code></li><li><code>GET /status/{conversion_id}</code></li><li><code>GET /download/{conversion_id}.mp3</code></li></ul></body></html>`
+
+const adminHTML = `<!doctype html><html><head><meta charset="utf-8"><title>Admin</title><style>body{font-family:system-ui, sans-serif;max-width:900px;margin:40px auto;padding:0 16px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}</style></head><body><h1>YTMP3 Admin</h1><div id="metrics"></div><script>async function refresh(){const r=await fetch('/metrics');const j=await r.json();document.getElementById('metrics').innerText=JSON.stringify(j,null,2);}setInterval(refresh,2000);refresh();</script></body></html>`
