@@ -229,7 +229,18 @@ func (a *API) handleConvertReq(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, models.ConvertAcceptedResponse{ConversionID: s.ID, Status: string(s.State), QueuePosition: 0, Message: "Reused existing converted output."})
 		return
 	}
-	// Map API key to job priority (simple heuristic: premium > default)
+    // Determine if source is already ready to avoid unnecessary 'queued' bounce
+    sourceReady := false
+    if s.SourcePath != "" {
+        sourceReady = true
+    } else {
+        if src, state, ok, _ := a.sessions.GetAsset(r.Context(), s.AssetHash); ok && src != "" && state == string(models.StateDownloaded) {
+            s.SourcePath = src
+            sourceReady = true
+        }
+    }
+
+    // Map API key to job priority (simple heuristic: premium > default)
 	apiKey := r.Header.Get("X-API-Key")
 	priority := 5
 	lk := strings.ToLower(apiKey)
@@ -241,17 +252,26 @@ func (a *API) handleConvertReq(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "queue full")
 		return
 	}
-	s.State = models.StateQueued
-	_ = a.sessions.UpdateSession(r.Context(), s)
+    // If the source is ready, reflect a more immediate state; otherwise mark queued
+    if sourceReady {
+        s.State = models.StateConverting
+    } else {
+        s.State = models.StateQueued
+    }
+    _ = a.sessions.UpdateSession(r.Context(), s)
 	// Report position in the convert queue and current download state
 	position := a.cvQueue.PositionForSession(queue.JobConvert, s.ID)
-	msg := "Conversion request accepted and queued."
-	if s.SourcePath == "" {
-		msg += " Waiting for download to finish."
-	}
-	writeJSON(w, http.StatusAccepted, models.ConvertAcceptedResponse{
+    msg := "Conversion request accepted."
+    if sourceReady {
+        msg += " Starting conversion shortly."
+    } else {
+        msg += " Waiting for download to finish."
+    }
+    // Report more accurate status in response to reduce UI flicker
+    respStatus := string(s.State)
+    writeJSON(w, http.StatusAccepted, models.ConvertAcceptedResponse{
 		ConversionID:  s.ID,
-		Status:        string(s.State),
+        Status:        respStatus,
 		QueuePosition: position,
 		Message:       msg,
 	})

@@ -1,22 +1,26 @@
 package downloader
 
 import (
-	"bufio"
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"net/http"
-	"net/url"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
+    "bufio"
+    "bytes"
+    "context"
+    "encoding/json"
+    "errors"
+    "io"
+    "net/http"
+    "net/url"
+    "os/exec"
+    "regexp"
+    "strconv"
+    "strings"
+    "sync/atomic"
+    "time"
 )
 
-var percentRe = regexp.MustCompile(`(\d{1,3})%`)
+// Example yt-dlp progress line:
+// [download]  12.3% of 3.21MiB at 123.4KiB/s ETA 00:12
+// Capture the leading percent after the [download] tag (decimals allowed)
+var downloadPctRe = regexp.MustCompile(`(?i)\[download\]\s+(\d{1,3}(?:\.\d+)?)%`)
 
 type ProgressFunc func(pct int)
 
@@ -221,37 +225,57 @@ func (d *Downloader) Download(ctx context.Context, url, outputPath string, onPro
 		audioFmt := "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"
 		args := []string{"-f", audioFmt, "-o", outputPath, "--no-playlist", "--newline", url}
 		cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-		stderr, err := cmd.StderrPipe()
+        stderr, err := cmd.StderrPipe()
 		if err != nil {
 			return err
 		}
-		stdout, err := cmd.StdoutPipe()
+        stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			return err
 		}
 		if err := cmd.Start(); err != nil {
 			return err
 		}
-		go readProgress(stderr, onProgress)
-		go readProgress(stdout, onProgress)
+        // Ensure monotonic progress across both stdout/stderr streams
+        var lastSent int32 = -1
+        monotonicCB := func(p int) {
+            for {
+                prev := atomic.LoadInt32(&lastSent)
+                if int32(p) <= prev {
+                    return
+                }
+                if atomic.CompareAndSwapInt32(&lastSent, prev, int32(p)) {
+                    onProgress(p)
+                    return
+                }
+            }
+        }
+        go readProgress(stderr, monotonicCB)
+        go readProgress(stdout, monotonicCB)
 		return cmd.Wait()
 	})
 }
 
-func readProgress(r io.Reader, onProgress ProgressFunc) {
+func readProgress(r io.Reader, onProgress func(int)) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if m := percentRe.FindStringSubmatch(line); len(m) == 2 {
-			if p, err := strconv.Atoi(m[1]); err == nil {
-				if p < 0 {
-					p = 0
-				}
-				if p > 100 {
-					p = 100
-				}
-				onProgress(p)
-			}
-		}
+        // Only parse lines marked as download progress
+        m := downloadPctRe.FindStringSubmatch(line)
+        if len(m) == 0 {
+            continue
+        }
+        pctStr := m[1]
+        // Allow decimals; round down to int percentage
+        if f, err := strconv.ParseFloat(pctStr, 64); err == nil {
+            p := int(f)
+            if p < 0 {
+                p = 0
+            }
+            if p > 100 {
+                p = 100
+            }
+            onProgress(p)
+        }
 	}
 }
