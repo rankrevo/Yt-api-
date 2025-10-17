@@ -20,7 +20,7 @@ const (
 	StateCreated     ConversionState = "created"
 	StateDownloading ConversionState = "downloading"
 	StateDownloaded  ConversionState = "downloaded"
-	StateQueued      ConversionState = "initializing"
+	StateQueued      ConversionState = "in queue"
 	StateConverting  ConversionState = "converting"
 	StateCompleted   ConversionState = "completed"
 	StateFailed      ConversionState = "failed"

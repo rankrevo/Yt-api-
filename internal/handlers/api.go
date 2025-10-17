@@ -321,10 +321,10 @@ func (a *API) handleStatus(w http.ResponseWriter, r *http.Request) {
 		// Prefer stable session-based download URL
 		downloadURL = "/download/" + s.ID + ".mp3"
 	}
-	// Use "Initializing" only for queued state
+	// Use "in queue" for queued state
 	status := string(s.State)
 	if s.State == models.StateQueued {
-		status = "initializing"
+		status = "in queue"
 	}
 	resp := models.StatusResponse{ConversionID: s.ID, Status: status, DownloadURL: downloadURL}
 	if s.State == models.StateQueued {
