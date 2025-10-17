@@ -17,11 +17,32 @@ type Registry struct {
 	SuccessCount   atomic.Int64
 	ErrorCount     atomic.Int64
 	SessionsActive atomic.Int64
+
+    // simple histograms (fixed buckets)
+    ConvertLatencyBuckets [10]atomic.Int64
+    DownloadLatencyBuckets [10]atomic.Int64
 }
 
 func NewRegistry() *Registry {
 	r := &Registry{UptimeStart: time.Now()}
 	return r
+}
+
+// ObserveDuration records duration seconds into fixed buckets (0.5,1,2,3,5,8,13,21,34,55+)
+func (r *Registry) ObserveDuration(seconds float64, isConvert bool) {
+    buckets := []float64{0.5, 1, 2, 3, 5, 8, 13, 21, 34, 55}
+    idx := len(buckets) - 1
+    for i, b := range buckets {
+        if seconds <= b {
+            idx = i
+            break
+        }
+    }
+    if isConvert {
+        r.ConvertLatencyBuckets[idx].Add(1)
+    } else {
+        r.DownloadLatencyBuckets[idx].Add(1)
+    }
 }
 
 func (r *Registry) SuccessRate() float64 {

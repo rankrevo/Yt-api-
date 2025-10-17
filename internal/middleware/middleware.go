@@ -121,3 +121,33 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// IPAllowlistMiddleware blocks requests not in the allowlist when the list is non-empty.
+func IPAllowlistMiddleware(allow []string) func(http.Handler) http.Handler {
+    // Normalize allowlist
+    allowed := map[string]struct{}{}
+    for _, ip := range allow {
+        ip = strings.TrimSpace(ip)
+        if ip != "" {
+            allowed[ip] = struct{}{}
+        }
+    }
+    return func(next http.Handler) http.Handler {
+        // If no allowlist configured, pass-through
+        if len(allowed) == 0 {
+            return next
+        }
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            ip := r.RemoteAddr
+            if idx := strings.LastIndex(ip, ":"); idx != -1 {
+                ip = ip[:idx]
+            }
+            if _, ok := allowed[ip]; !ok {
+                w.WriteHeader(http.StatusForbidden)
+                _, _ = w.Write([]byte("ip not allowed"))
+                return
+            }
+            next.ServeHTTP(w, r)
+        })
+    }
+}

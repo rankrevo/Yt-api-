@@ -25,6 +25,7 @@ import (
 	"ytmp3api/internal/queue"
 	"ytmp3api/internal/store"
 	"ytmp3api/internal/util"
+    "os/exec"
 )
 
 type API struct {
@@ -131,6 +132,8 @@ func (a *API) Router() http.Handler {
 	corsMw := cors.New(cors.Options{AllowedOrigins: a.cfg.AllowedOrigins, AllowedMethods: []string{"GET", "POST", "DELETE", "OPTIONS"}, AllowedHeaders: []string{"*"}, ExposedHeaders: []string{"Content-Length", "Content-Range"}, AllowCredentials: false})
 	r.Use(corsMw.Handler)
 	r.Use(middleware.SecurityHeaders)
+    // Optional IP allowlist
+    r.Use(middleware.IPAllowlistMiddleware(a.cfg.IPAllowlist))
 	// Rate limiting
 	r.Use(middleware.GlobalRateLimiter(a.cfg.RequestsPerSecond, a.cfg.BurstSize))
 	r.Use(middleware.PerIPRateLimiter(a.cfg.PerIPRPS, a.cfg.PerIPBurst))
@@ -147,12 +150,13 @@ func (a *API) Router() http.Handler {
 	r.Get("/download/{id}.mp3", a.handleDownloadFile)
 	r.Delete("/delete/{id}", a.handleDelete)
 
-	r.Get("/health", a.handleHealth)
+    r.Get("/health", a.handleHealth)
+    r.Get("/ready", a.handleReady)
 	r.Get("/metrics", a.handleMetricsJSON)
 	r.Get("/stats", a.handleStats)
 	// prometheus metrics at /metrics/prom if client_golang is added later
 
-	// Simple docs and admin placeholders
+    // Simple docs and admin placeholders
 	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		io.WriteString(w, docsHTML)
@@ -161,6 +165,9 @@ func (a *API) Router() http.Handler {
 		w.Header().Set("Content-Type", "text/html")
 		io.WriteString(w, adminHTML)
 	})
+
+    // Tool self-test endpoint
+    r.Get("/selftest", a.handleSelfTest)
 
 	return r
 }
@@ -171,6 +178,11 @@ func (a *API) handlePrepare(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+    // Validation: allowed domains
+    if !util.IsAllowedDomain(req.URL, a.cfg.AllowedDomains) {
+        writeErr(w, http.StatusBadRequest, "unsupported url domain")
+        return
+    }
 	// Always create a new session; dedupe at asset/variant layer instead of reusing sessions
 	id := newID()
 	s := &models.ConversionSession{ID: id, URL: req.URL, State: models.StatePreparing}
@@ -213,6 +225,14 @@ func (a *API) handleConvertReq(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "session not found")
 		return
 	}
+    // Validation: sanity check start/end and max clip length
+    // Try using known video duration from metadata if present
+    total := s.Meta.Duration
+    if total < 0 { total = 0 }
+    if _, _, ok := util.ParseClipBounds(req.StartTime, req.EndTime, a.cfg.MaxClipSeconds, total); !ok {
+        writeErr(w, http.StatusBadRequest, "invalid start/end or clip too long")
+        return
+    }
 	// Always accept and enqueue conversion asynchronously. If source not ready,
 	// workers will re-enqueue after a short delay until download completes.
 	// Variant hash (url + quality + range)
@@ -322,6 +342,7 @@ func (a *API) handleDownload(job queue.Job) {
 	}
 	s.State = models.StateDownloading
 	_ = a.sessions.UpdateSession(ctx, s)
+    start := time.Now()
 	// store by asset hash under streams/ so future sessions reuse it
 	if s.AssetHash == "" {
 		s.AssetHash = util.HashString(util.CanonicalVideoID(s.URL))
@@ -331,13 +352,26 @@ func (a *API) handleDownload(job queue.Job) {
 		s.DownloadProgress = p
 		_ = a.sessions.UpdateSession(ctx, s)
 	})
-	if err != nil {
-		s.State = models.StateFailed
-		s.Error = err.Error()
-		_ = a.sessions.UpdateSession(ctx, s)
-		_ = a.sessions.SetAsset(ctx, s.AssetHash, "", string(models.StateFailed))
-		return
-	}
+    if err != nil {
+        job.Attempts++
+        if job.Attempts < a.cfg.MaxJobRetries {
+            backoff := time.Duration(1<<job.Attempts) * time.Second
+            if backoff > 60*time.Second { backoff = 60 * time.Second }
+            go func(j queue.Job) {
+                time.Sleep(backoff)
+                a.dlQueue.Enqueue(j)
+            }(job)
+        } else {
+            s.State = models.StateFailed
+            s.Error = err.Error()
+            _ = a.sessions.UpdateSession(ctx, s)
+            _ = a.sessions.SetAsset(ctx, s.AssetHash, "", string(models.StateFailed))
+            a.metrics.ErrorCount.Add(1)
+        }
+        return
+    }
+    a.metrics.SuccessCount.Add(1)
+    a.metrics.ObserveDuration(time.Since(start).Seconds(), false)
 	s.SourcePath = out
 	s.State = models.StateDownloaded
 	s.DownloadProgress = 100
@@ -351,6 +385,7 @@ func (a *API) handleConvert(job queue.Job) {
 	if err != nil {
 		return
 	}
+    start := time.Now()
     // Attempt to hydrate missing SourcePath from the shared asset cache.
     // This allows new sessions for the same URL to convert immediately
     // without waiting for a redundant download or re-enqueue loops.
@@ -384,16 +419,30 @@ func (a *API) handleConvert(job queue.Job) {
 	}
 	out := filepath.Join(a.cfg.ConversionsDir, "outputs", s.VariantHash+".mp3")
 	dur := s.Meta.Duration
-	err = a.conv.Convert(ctx, s.SourcePath, out, job.Quality, job.StartTime, job.EndTime, dur, func(p int) {
+    err = a.conv.Convert(ctx, s.SourcePath, out, job.Quality, job.StartTime, job.EndTime, dur, func(p int) {
 		s.ConversionProgress = p
 		_ = a.sessions.UpdateSession(ctx, s)
 	})
 	if err != nil {
-		s.State = models.StateFailed
-		s.Error = err.Error()
-		_ = a.sessions.UpdateSession(ctx, s)
-		return
+        job.Attempts++
+        if job.Attempts < a.cfg.MaxJobRetries {
+            // Exponential backoff: 2^attempt seconds up to 60s
+            backoff := time.Duration(1<<job.Attempts) * time.Second
+            if backoff > 60*time.Second { backoff = 60 * time.Second }
+            go func(j queue.Job) {
+                time.Sleep(backoff)
+                a.cvQueue.Enqueue(j)
+            }(job)
+        } else {
+            s.State = models.StateFailed
+            s.Error = err.Error()
+            _ = a.sessions.UpdateSession(ctx, s)
+            a.metrics.ErrorCount.Add(1)
+        }
+        return
 	}
+    a.metrics.SuccessCount.Add(1)
+    a.metrics.ObserveDuration(time.Since(start).Seconds(), true)
 	s.OutputPath = out
 	s.ConversionProgress = 100
 	s.State = models.StateCompleted
@@ -436,6 +485,19 @@ func (a *API) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (a *API) handleReady(w http.ResponseWriter, r *http.Request) {
+    // Consider ready if queues below capacity and tools installed
+    // Cheap checks; deeper checks available via /selftest
+    if a.cfg.ShedQueueThreshold > 0 {
+        totalQ := a.dlQueue.Len() + a.cvQueue.Len()
+        if totalQ > a.cfg.ShedQueueThreshold {
+            writeErr(w, http.StatusServiceUnavailable, "shedding: too many queued jobs")
+            return
+        }
+    }
+    writeJSON(w, http.StatusOK, map[string]any{"status": "ready"})
+}
+
 func (a *API) handleMetricsJSON(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
 		"active_jobs":      a.metrics.ActiveJobs.Load(),
@@ -449,6 +511,8 @@ func (a *API) handleMetricsJSON(w http.ResponseWriter, r *http.Request) {
 		"success_rate":     a.metrics.SuccessRate(),
 		"avg_processing_s": 0.0,
 		"sessions_active":  a.metrics.SessionsActive.Load(),
+        "convert_latency_buckets": a.metrics.ConvertLatencyBuckets,
+        "download_latency_buckets": a.metrics.DownloadLatencyBuckets,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -458,6 +522,26 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 		"queue_download_len": a.dlQueue.Len(),
 		"queue_convert_len":  a.cvQueue.Len(),
 	})
+}
+
+func (a *API) handleSelfTest(w http.ResponseWriter, r *http.Request) {
+    // Check presence of external tools
+    type toolInfo struct{ Name, Version, Error string }
+    tools := []toolInfo{}
+    // ffmpeg -version
+    if out, err := exec.Command("ffmpeg", "-version").Output(); err == nil {
+        lines := strings.SplitN(string(out), "\n", 2)
+        tools = append(tools, toolInfo{Name: "ffmpeg", Version: strings.TrimSpace(lines[0])})
+    } else {
+        tools = append(tools, toolInfo{Name: "ffmpeg", Error: err.Error()})
+    }
+    if out, err := exec.Command("yt-dlp", "--version").Output(); err == nil {
+        v := strings.TrimSpace(string(out))
+        tools = append(tools, toolInfo{Name: "yt-dlp", Version: v})
+    } else {
+        tools = append(tools, toolInfo{Name: "yt-dlp", Error: err.Error()})
+    }
+    writeJSON(w, http.StatusOK, map[string]any{"tools": tools})
 }
 
 func writeErr(w http.ResponseWriter, code int, msg string) {

@@ -50,6 +50,12 @@ type Config struct {
 
 	MaxConcurrentDownloads   int
 	MaxConcurrentConversions int
+
+    // Validation and security
+    AllowedDomains    []string
+    MaxClipSeconds    int
+    IPAllowlist       []string
+    ShedQueueThreshold int // shed traffic if total queued jobs exceed threshold
 }
 
 func getEnv(key, def string) string {
@@ -148,8 +154,14 @@ func Load() *Config {
 		OEmbedEndpoint:      getEnv("OEMBED_ENDPOINT", "https://www.youtube.com/oembed"),
 		DurationAPIEndpoint: getEnv("DURATION_API_ENDPOINT", "https://ds2.ezsrv.net/api/getDuration"),
 
-		MaxConcurrentDownloads:   getEnvInt("MAX_CONCURRENT_DOWNLOADS", 20),
-		MaxConcurrentConversions: getEnvInt("MAX_CONCURRENT_CONVERSIONS", 20),
+        MaxConcurrentDownloads:   getEnvInt("MAX_CONCURRENT_DOWNLOADS", 20),
+        MaxConcurrentConversions: getEnvInt("MAX_CONCURRENT_CONVERSIONS", 20),
+
+        // Validation and security
+        AllowedDomains:    splitAndTrim(getEnv("ALLOWED_DOMAINS", "youtube.com,youtu.be")),
+        MaxClipSeconds:    getEnvInt("MAX_CLIP_SECONDS", 15*60),
+        IPAllowlist:       splitAndTrim(getEnv("IP_ALLOWLIST", "")),
+        ShedQueueThreshold: getEnvInt("SHED_QUEUE_THRESHOLD", 0),
 	}
 	return cfg
 }
