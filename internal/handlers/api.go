@@ -194,6 +194,13 @@ func (a *API) handlePrepare(w http.ResponseWriter, r *http.Request) {
 
 	// fetch metadata fast using yt-dlp --dump-json (fallback design)
 	title, thumb, dur, _ := a.dl.FetchMetadata(r.Context(), req.URL)
+	
+	// Check video duration limit
+	if dur > 0 && dur > a.cfg.MaxVideoDurationSeconds {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("Video too long. Maximum allowed duration is %s", formatDuration(a.cfg.MaxVideoDurationSeconds)))
+		return
+	}
+	
 	s.Meta = models.MetaLite{Title: title, Thumbnail: thumb, Duration: dur}
 	s.State = models.StateCreated
 	_ = a.sessions.UpdateSession(r.Context(), s)
@@ -229,6 +236,13 @@ func (a *API) handleConvertReq(w http.ResponseWriter, r *http.Request) {
     // Try using known video duration from metadata if present
     total := s.Meta.Duration
     if total < 0 { total = 0 }
+    
+    // Check if video duration exceeds maximum allowed
+    if total > 0 && total > a.cfg.MaxVideoDurationSeconds {
+        writeErr(w, http.StatusBadRequest, fmt.Sprintf("Video too long. Maximum allowed duration is %s", formatDuration(a.cfg.MaxVideoDurationSeconds)))
+        return
+    }
+    
     if _, _, ok := util.ParseClipBounds(req.StartTime, req.EndTime, a.cfg.MaxClipSeconds, total); !ok {
         writeErr(w, http.StatusBadRequest, "invalid start/end or clip too long")
         return
@@ -565,4 +579,13 @@ func safeFilename(s string) string {
 
 func newID() string {
 	return fmt.Sprintf("conv_%d_%d", time.Now().Unix(), rand.Int63())
+}
+
+func formatDuration(seconds int) string {
+	hours := seconds / 3600
+	minutes := (seconds % 3600) / 60
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	}
+	return fmt.Sprintf("%dm", minutes)
 }

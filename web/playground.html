@@ -303,6 +303,8 @@
       if (res.ok && res.json.conversion_id) {
         el('cid').textContent = res.json.conversion_id;
         el('cidInput').value = res.json.conversion_id;
+      } else if (res.json.error && res.json.error.includes('too long')) {
+        alert('❌ ' + res.json.error);
       }
       el('curl').textContent = buildCurl(res);
       persist();

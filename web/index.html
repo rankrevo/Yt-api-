@@ -594,7 +594,11 @@
                         // Start monitoring status
                         this.startStatusMonitoring();
                     } else {
-                        this.showError(data.error || 'Failed to prepare video');
+                        if (data.error && data.error.includes('too long')) {
+                            this.showError('❌ ' + data.error);
+                        } else {
+                            this.showError(data.error || 'Failed to prepare video');
+                        }
                     }
                 } catch (error) {
                     this.showError('Network error: ' + error.message);
@@ -644,7 +648,11 @@
                         this.showSuccess('Conversion started!');
                         this.updateStatus('Converting...');
                     } else {
-                        this.showError(data.error || 'Failed to start conversion');
+                        if (data.error && data.error.includes('too long')) {
+                            this.showError('❌ ' + data.error);
+                        } else {
+                            this.showError(data.error || 'Failed to start conversion');
+                        }
                     }
                 } catch (error) {
                     this.showError('Network error: ' + error.message);
