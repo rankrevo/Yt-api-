@@ -23,6 +23,7 @@ type Job struct {
 	EnqueuedAt time.Time
 	Priority   int
 	ApiKey     string
+    Attempts   int
 }
 
 type priorityJob struct {

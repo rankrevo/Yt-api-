@@ -30,17 +30,45 @@ docker-compose up -d --build
 - Redis on redis://localhost:6379
 
 ## Configuration (env)
-- WORKER_POOL_SIZE (default 20)
-- JOB_QUEUE_CAPACITY (default 1000)
-- REQUESTS_PER_SECOND, BURST_SIZE (global rate limit)
-- PER_IP_RPS, PER_IP_BURST (per-IP limit)
-- REDIS_ADDR, REDIS_PASSWORD, REDIS_DB
-- YTDLP_TIMEOUT, YTDLP_DOWNLOAD_TIMEOUT
-- FFMPEG_* (MODE, CBR/VBR, THREADS)
-- MAX_CONCURRENT_DOWNLOADS, MAX_CONCURRENT_CONVERSIONS
-- CONVERSIONS_DIR (will contain streams/ and outputs/)
-- REQUIRE_API_KEY, API_KEYS (comma separated)
-- OEMBED_ENDPOINT, DURATION_API_ENDPOINT
+
+Environment variables configure performance, security, and behavior. Defaults are shown in parentheses.
+
+- WORKER_POOL_SIZE (20): Number of goroutines per worker pool (download/convert). Higher = more concurrency.
+- JOB_QUEUE_CAPACITY (1000): Max pending jobs per priority queue before new requests get 503.
+- MAX_JOB_RETRIES (3): Automatic retries per job with exponential backoff.
+
+- REQUESTS_PER_SECOND (100), BURST_SIZE (200): Global rate limit token bucket.
+- PER_IP_RPS (10), PER_IP_BURST (20): Per-client-IP rate limit.
+
+- REDIS_ADDR, REDIS_PASSWORD, REDIS_DB: If REDIS_ADDR is reachable, sessions/dedup use Redis instead of memory.
+
+- YTDLP_TIMEOUT (90s): Timeout for yt-dlp metadata fallback.
+- YTDLP_DOWNLOAD_TIMEOUT (30m): Max time for downloading a single stream.
+
+- FFMPEG_MODE (CBR): Encoding mode CBR or VBR.
+- FFMPEG_CBR_BITRATE (192k): Bitrate when using CBR (e.g., 128k/192k/320k).
+- FFMPEG_VBR_Q (5): VBR quality (LAME scale; lower number = higher quality).
+- FFMPEG_THREADS (0): Threads for ffmpeg; 0 lets ffmpeg decide.
+
+- MAX_CONCURRENT_DOWNLOADS (20): Max concurrent downloads (semaphore size).
+- MAX_CONCURRENT_CONVERSIONS (20): Max concurrent conversions.
+
+- CONVERSIONS_DIR (/tmp/conversions): Root dir; contains streams/ and outputs/ subdirs.
+- UNCONVERTED_FILE_TTL (5m): Auto-clean old source streams.
+- CONVERTED_FILE_TTL (10m): Auto-clean old converted files.
+
+- REQUIRE_API_KEY (false): Enforce API key on all requests.
+- API_KEYS (""): Comma-separated list of valid API keys.
+- ALLOWED_ORIGINS (*): CORS AllowedOrigins list.
+
+- OEMBED_ENDPOINT (https://www.youtube.com/oembed): Used for fast title/thumbnail.
+- DURATION_API_ENDPOINT (https://ds2.ezsrv.net/api/getDuration): Used for fast duration.
+
+- ALLOWED_DOMAINS (youtube.com,youtu.be): Only accept URLs from these hosts.
+- MAX_CLIP_SECONDS (900): Reject clips longer than this (based on start/end/duration).
+- IP_ALLOWLIST (""): Optional comma-separated client IPs to allow; empty = allow all.
+- SHED_QUEUE_THRESHOLD (0): If total queued jobs exceed this, readiness returns 503 to shed load.
+
 
 ## Endpoints
 
