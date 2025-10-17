@@ -194,6 +194,13 @@ func (a *API) handlePrepare(w http.ResponseWriter, r *http.Request) {
 
 	// fetch metadata fast using yt-dlp --dump-json (fallback design)
 	title, thumb, dur, _ := a.dl.FetchMetadata(r.Context(), req.URL)
+	
+	// Check video duration limit
+	if dur > 0 && dur > a.cfg.MaxVideoDurationSeconds {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("Video too long. Maximum allowed duration is %s", formatDuration(a.cfg.MaxVideoDurationSeconds)))
+		return
+	}
+	
 	s.Meta = models.MetaLite{Title: title, Thumbnail: thumb, Duration: dur}
 	s.State = models.StateCreated
 	_ = a.sessions.UpdateSession(r.Context(), s)
@@ -225,12 +232,19 @@ func (a *API) handleConvertReq(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "session not found")
 		return
 	}
-    // Validation: sanity check start/end and max clip length
-    // Try using known video duration from metadata if present
+    // Validation: check if video duration exceeds maximum allowed
     total := s.Meta.Duration
     if total < 0 { total = 0 }
-    if _, _, ok := util.ParseClipBounds(req.StartTime, req.EndTime, a.cfg.MaxClipSeconds, total); !ok {
-        writeErr(w, http.StatusBadRequest, "invalid start/end or clip too long")
+    
+    // Check if video duration exceeds maximum allowed
+    if total > 0 && total > a.cfg.MaxVideoDurationSeconds {
+        writeErr(w, http.StatusBadRequest, fmt.Sprintf("Video too long. Maximum allowed duration is %s", formatDuration(a.cfg.MaxVideoDurationSeconds)))
+        return
+    }
+    
+    // Basic validation for start/end times (no clip length limit)
+    if _, _, ok := util.ParseClipBounds(req.StartTime, req.EndTime, 0, total); !ok {
+        writeErr(w, http.StatusBadRequest, "invalid start/end time format")
         return
     }
 	// Always accept and enqueue conversion asynchronously. If source not ready,
@@ -243,8 +257,6 @@ func (a *API) handleConvertReq(w http.ResponseWriter, r *http.Request) {
 	if out, ok, _ := a.sessions.GetVariant(r.Context(), s.VariantHash); ok && out != "" {
 		s.OutputPath = out
 		s.State = models.StateCompleted
-		s.DownloadProgress = 100
-		s.ConversionProgress = 100
 		_ = a.sessions.UpdateSession(r.Context(), s)
 		writeJSON(w, http.StatusAccepted, models.ConvertAcceptedResponse{ConversionID: s.ID, Status: string(s.State), QueuePosition: 0, Message: "Reused existing converted output."})
 		return
@@ -309,7 +321,9 @@ func (a *API) handleStatus(w http.ResponseWriter, r *http.Request) {
 		// Prefer stable session-based download URL
 		downloadURL = "/download/" + s.ID + ".mp3"
 	}
-	resp := models.StatusResponse{ConversionID: s.ID, Status: string(s.State), DownloadProgress: s.DownloadProgress, ConversionProgress: s.ConversionProgress, DownloadURL: downloadURL}
+	// Use proper capitalization for all states
+	status := string(s.State)
+	resp := models.StatusResponse{ConversionID: s.ID, Status: status, DownloadURL: downloadURL}
 	if s.State == models.StateQueued {
 		resp.QueuePosition = a.cvQueue.PositionForSession(queue.JobConvert, s.ID)
 	}
@@ -349,8 +363,7 @@ func (a *API) handleDownload(job queue.Job) {
 	}
 	out := filepath.Join(a.cfg.ConversionsDir, "streams", s.AssetHash+".source")
 	err = a.dl.Download(ctx, s.URL, out, func(p int) {
-		s.DownloadProgress = p
-		_ = a.sessions.UpdateSession(ctx, s)
+		// Progress tracking removed - using "initializing" status instead
 	})
     if err != nil {
         job.Attempts++
@@ -374,7 +387,6 @@ func (a *API) handleDownload(job queue.Job) {
     a.metrics.ObserveDuration(time.Since(start).Seconds(), false)
 	s.SourcePath = out
 	s.State = models.StateDownloaded
-	s.DownloadProgress = 100
 	_ = a.sessions.UpdateSession(ctx, s)
 	_ = a.sessions.SetAsset(ctx, s.AssetHash, out, string(models.StateDownloaded))
 }
@@ -396,7 +408,6 @@ func (a *API) handleConvert(job queue.Job) {
         if src, state, ok, _ := a.sessions.GetAsset(ctx, s.AssetHash); ok && src != "" && state == string(models.StateDownloaded) {
             s.SourcePath = src
             s.State = models.StateDownloaded
-            s.DownloadProgress = 100
             _ = a.sessions.UpdateSession(ctx, s)
         }
     }
@@ -409,6 +420,7 @@ func (a *API) handleConvert(job queue.Job) {
 		}(job)
 		return
 	}
+	// Only set to Converting when source is actually ready
 	s.State = models.StateConverting
 	_ = a.sessions.UpdateSession(ctx, s)
 	if s.AssetHash == "" {
@@ -420,8 +432,7 @@ func (a *API) handleConvert(job queue.Job) {
 	out := filepath.Join(a.cfg.ConversionsDir, "outputs", s.VariantHash+".mp3")
 	dur := s.Meta.Duration
     err = a.conv.Convert(ctx, s.SourcePath, out, job.Quality, job.StartTime, job.EndTime, dur, func(p int) {
-		s.ConversionProgress = p
-		_ = a.sessions.UpdateSession(ctx, s)
+		// Progress tracking removed - using "initializing" status instead
 	})
 	if err != nil {
         job.Attempts++
@@ -444,7 +455,6 @@ func (a *API) handleConvert(job queue.Job) {
     a.metrics.SuccessCount.Add(1)
     a.metrics.ObserveDuration(time.Since(start).Seconds(), true)
 	s.OutputPath = out
-	s.ConversionProgress = 100
 	s.State = models.StateCompleted
 	_ = a.sessions.UpdateSession(ctx, s)
 	_ = a.sessions.SetVariant(ctx, s.VariantHash, out)
@@ -567,4 +577,13 @@ func safeFilename(s string) string {
 
 func newID() string {
 	return fmt.Sprintf("conv_%d_%d", time.Now().Unix(), rand.Int63())
+}
+
+func formatDuration(seconds int) string {
+	hours := seconds / 3600
+	minutes := (seconds % 3600) / 60
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	}
+	return fmt.Sprintf("%dm", minutes)
 }

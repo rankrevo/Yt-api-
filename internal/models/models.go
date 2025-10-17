@@ -5,6 +5,7 @@ import "time"
 type ConversionQuality string
 
 const (
+	Quality64  ConversionQuality = "64"
 	Quality128 ConversionQuality = "128"
 	Quality192 ConversionQuality = "192"
 	Quality256 ConversionQuality = "256"
@@ -14,15 +15,15 @@ const (
 type ConversionState string
 
 const (
-	StatePreparing   ConversionState = "preparing"
-	StateFetching    ConversionState = "fetching_metadata"
-	StateCreated     ConversionState = "created"
-	StateDownloading ConversionState = "downloading"
-	StateDownloaded  ConversionState = "downloaded"
-	StateQueued      ConversionState = "queued_for_conversion"
-	StateConverting  ConversionState = "converting"
-	StateCompleted   ConversionState = "completed"
-	StateFailed      ConversionState = "failed"
+	StatePreparing   ConversionState = "Preparing"
+	StateFetching    ConversionState = "Fetching Metadata"
+	StateCreated     ConversionState = "Created"
+	StateDownloading ConversionState = "Downloading"
+	StateDownloaded  ConversionState = "Downloaded"
+	StateQueued      ConversionState = "In Queue"
+	StateConverting  ConversionState = "Converting"
+	StateCompleted   ConversionState = "Completed"
+	StateFailed      ConversionState = "Failed"
 )
 
 type MetaLite struct {
@@ -40,8 +41,6 @@ type ConversionSession struct {
 	CreatedAt          time.Time         `json:"created_at"`
 	UpdatedAt          time.Time         `json:"updated_at"`
 	SourcePath         string            `json:"source_path"`
-	DownloadProgress   int               `json:"download_progress"`
-	ConversionProgress int               `json:"conversion_progress"`
 	OutputPath         string            `json:"output_path"`
 	Quality            ConversionQuality `json:"quality"`
 	Error              string            `json:"error"`
@@ -84,8 +83,6 @@ type ConvertAcceptedResponse struct {
 type StatusResponse struct {
 	ConversionID       string `json:"conversion_id"`
 	Status             string `json:"status"`
-	DownloadProgress   int    `json:"download_progress"`
-	ConversionProgress int    `json:"conversion_progress"`
 	DownloadURL        string `json:"download_url"`
 	QueuePosition      int    `json:"queue_position,omitempty"`
 	Error              string `json:"error,omitempty"`
