@@ -18,10 +18,10 @@ const (
 	StatePreparing   ConversionState = "preparing"
 	StateFetching    ConversionState = "fetching_metadata"
 	StateCreated     ConversionState = "created"
-	StateDownloading ConversionState = "initializing"
+	StateDownloading ConversionState = "downloading"
 	StateDownloaded  ConversionState = "downloaded"
 	StateQueued      ConversionState = "initializing"
-	StateConverting  ConversionState = "initializing"
+	StateConverting  ConversionState = "converting"
 	StateCompleted   ConversionState = "completed"
 	StateFailed      ConversionState = "failed"
 )
