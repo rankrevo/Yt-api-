@@ -321,11 +321,8 @@ func (a *API) handleStatus(w http.ResponseWriter, r *http.Request) {
 		// Prefer stable session-based download URL
 		downloadURL = "/download/" + s.ID + ".mp3"
 	}
-	// Use "in queue" for queued state
+	// Use proper capitalization for all states
 	status := string(s.State)
-	if s.State == models.StateQueued {
-		status = "in queue"
-	}
 	resp := models.StatusResponse{ConversionID: s.ID, Status: status, DownloadURL: downloadURL}
 	if s.State == models.StateQueued {
 		resp.QueuePosition = a.cvQueue.PositionForSession(queue.JobConvert, s.ID)

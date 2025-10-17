@@ -15,15 +15,15 @@ const (
 type ConversionState string
 
 const (
-	StatePreparing   ConversionState = "preparing"
-	StateFetching    ConversionState = "fetching_metadata"
-	StateCreated     ConversionState = "created"
-	StateDownloading ConversionState = "downloading"
-	StateDownloaded  ConversionState = "downloaded"
-	StateQueued      ConversionState = "in queue"
-	StateConverting  ConversionState = "converting"
-	StateCompleted   ConversionState = "completed"
-	StateFailed      ConversionState = "failed"
+	StatePreparing   ConversionState = "Preparing"
+	StateFetching    ConversionState = "Fetching Metadata"
+	StateCreated     ConversionState = "Created"
+	StateDownloading ConversionState = "Downloading"
+	StateDownloaded  ConversionState = "Downloaded"
+	StateQueued      ConversionState = "In Queue"
+	StateConverting  ConversionState = "Converting"
+	StateCompleted   ConversionState = "Completed"
+	StateFailed      ConversionState = "Failed"
 )
 
 type MetaLite struct {
