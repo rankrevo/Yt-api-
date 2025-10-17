@@ -420,6 +420,7 @@ func (a *API) handleConvert(job queue.Job) {
 		}(job)
 		return
 	}
+	// Only set to Converting when source is actually ready
 	s.State = models.StateConverting
 	_ = a.sessions.UpdateSession(ctx, s)
 	if s.AssetHash == "" {
