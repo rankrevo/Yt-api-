@@ -413,6 +413,11 @@ func (a *API) handleConvert(job queue.Job) {
     }
 	// Wait until download finishes; if not ready, re-enqueue shortly
 	if s.SourcePath == "" || s.State == models.StateDownloading || s.State == models.StatePreparing || s.State == models.StateCreated {
+		// Keep status as "In Queue" while waiting for download
+		if s.State != models.StateQueued {
+			s.State = models.StateQueued
+			_ = a.sessions.UpdateSession(ctx, s)
+		}
 		go func(j queue.Job) {
 			// Re-enqueue without mutating the session to avoid overwriting newer fields
 			time.Sleep(5 * time.Second)
