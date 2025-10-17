@@ -98,10 +98,6 @@ type Config struct {
     // (e.g., "youtube.com,youtu.be"). (ALLOWED_DOMAINS)
     AllowedDomains []string
 
-    // MaxClipSeconds caps the clip duration either (end-start) or (total-start)
-    // if end is empty. Requests exceeding this limit are rejected. (MAX_CLIP_SECONDS, default 900)
-    MaxClipSeconds int
-
     // MaxVideoDurationSeconds caps the total video duration. Videos longer than this are rejected. (MAX_VIDEO_DURATION_SECONDS, default 2400 = 40 minutes)
     MaxVideoDurationSeconds int
 
@@ -215,7 +211,6 @@ func Load() *Config {
 
         // Validation and security
         AllowedDomains:    splitAndTrim(getEnv("ALLOWED_DOMAINS", "youtube.com,youtu.be")),
-        MaxClipSeconds:    getEnvInt("MAX_CLIP_SECONDS", 15*60),
         MaxVideoDurationSeconds: getEnvInt("MAX_VIDEO_DURATION_SECONDS", 40*60), // 40 minutes
         IPAllowlist:       splitAndTrim(getEnv("IP_ALLOWLIST", "")),
         ShedQueueThreshold: getEnvInt("SHED_QUEUE_THRESHOLD", 0),

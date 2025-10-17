@@ -232,8 +232,7 @@ func (a *API) handleConvertReq(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "session not found")
 		return
 	}
-    // Validation: sanity check start/end and max clip length
-    // Try using known video duration from metadata if present
+    // Validation: check if video duration exceeds maximum allowed
     total := s.Meta.Duration
     if total < 0 { total = 0 }
     
@@ -243,8 +242,9 @@ func (a *API) handleConvertReq(w http.ResponseWriter, r *http.Request) {
         return
     }
     
-    if _, _, ok := util.ParseClipBounds(req.StartTime, req.EndTime, a.cfg.MaxClipSeconds, total); !ok {
-        writeErr(w, http.StatusBadRequest, "invalid start/end or clip too long")
+    // Basic validation for start/end times (no clip length limit)
+    if _, _, ok := util.ParseClipBounds(req.StartTime, req.EndTime, 0, total); !ok {
+        writeErr(w, http.StatusBadRequest, "invalid start/end time format")
         return
     }
 	// Always accept and enqueue conversion asynchronously. If source not ready,
