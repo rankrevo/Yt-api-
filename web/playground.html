@@ -58,6 +58,7 @@
         <div>
           <label>Quality</label>
           <select id="quality">
+            <option value="64">64</option>
             <option value="128">128</option>
             <option value="192">192</option>
             <option value="256">256</option>
@@ -78,12 +79,12 @@
 
       <div class="row">
         <div>
-          <label>Download Progress</label>
-          <div class="progress"><div id="dlBar" class="bar"></div></div>
+          <label>Status</label>
+          <div id="statusDisplay" style="padding: 10px; background: #0b1022; border: 1px solid #28314d; border-radius: 8px; color: #e8ecf1;">Ready</div>
         </div>
         <div>
-          <label>Conversion Progress</label>
-          <div class="progress"><div id="cvBar" class="bar"></div></div>
+          <label>Queue Position</label>
+          <div id="queuePosition" style="padding: 10px; background: #0b1022; border: 1px solid #28314d; border-radius: 8px; color: #e8ecf1;">-</div>
         </div>
       </div>
 
@@ -120,6 +121,7 @@
         <div>
           <label>Quality</label>
           <select id="quality2">
+            <option value="64">64</option>
             <option value="128">128</option>
             <option value="192">192</option>
             <option value="256">256</option>
@@ -193,7 +195,6 @@
 
   <script>
     const el = id => document.getElementById(id);
-    const setBar = (id, v) => { el(id).style.width = Math.max(0, Math.min(100, Number(v)||0)) + '%'; };
 
     function buildHeaders(extra = {}) {
       const headers = { ...extra };
@@ -321,8 +322,8 @@
     async function uiStatus(conversionId, target='resp') {
       const res = await request('GET', '/status/' + encodeURIComponent(conversionId));
       if (res.ok) {
-        setBar('dlBar', res.json.download_progress);
-        setBar('cvBar', res.json.conversion_progress);
+        el('statusDisplay').textContent = res.json.status || 'Unknown';
+        el('queuePosition').textContent = res.json.queue_position || '-';
         if (res.json.download_url) setDownloadLink(res.json.download_url);
       }
       show(res.json, target);
@@ -379,7 +380,7 @@
     el('btnStart').addEventListener('click', async () => {
       const url = el('url').value.trim();
       if (!url) { alert('Enter a YouTube video URL'); return; }
-      el('download').style.display = 'none'; setBar('dlBar', 0); setBar('cvBar', 0);
+      el('download').style.display = 'none'; el('statusDisplay').textContent = 'Ready'; el('queuePosition').textContent = '-';
       const prep = await uiPrepare(url);
       if (prep.ok && prep.json.conversion_id) {
         const cid = prep.json.conversion_id;

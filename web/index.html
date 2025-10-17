@@ -374,6 +374,7 @@
                     <div class="input-group">
                         <label for="quality">🎵 Audio Quality</label>
                         <select id="quality" class="select-input">
+                            <option value="64">64 kbps (Low)</option>
                             <option value="128">128 kbps (Standard)</option>
                             <option value="192">192 kbps (Good)</option>
                             <option value="256">256 kbps (High)</option>
@@ -404,24 +405,24 @@
                 </button>
             </div>
 
-            <!-- Progress Section -->
+            <!-- Status Section -->
             <div class="progress-section">
                 <div class="progress-item">
                     <div class="progress-label">
-                        <span>📥 Download Progress</span>
-                        <span id="downloadPercent">0%</span>
+                        <span>📊 Current Status</span>
+                        <span id="currentStatusText">Ready</span>
                     </div>
                     <div class="progress-bar">
-                        <div id="downloadProgress" class="progress-fill" style="width: 0%"></div>
+                        <div id="statusIndicator" class="progress-fill" style="width: 100%; background: linear-gradient(90deg, #56ab2f, #a8e6cf);"></div>
                     </div>
                 </div>
                 <div class="progress-item">
                     <div class="progress-label">
-                        <span>🔄 Conversion Progress</span>
-                        <span id="convertPercent">0%</span>
+                        <span>⏳ Queue Position</span>
+                        <span id="queuePositionText">-</span>
                     </div>
                     <div class="progress-bar">
-                        <div id="convertProgress" class="progress-fill" style="width: 0%"></div>
+                        <div id="queueIndicator" class="progress-fill" style="width: 0%; background: linear-gradient(90deg, #667eea, #764ba2);"></div>
                     </div>
                 </div>
             </div>
@@ -541,12 +542,18 @@
                 return `${minutes}:${secs.toString().padStart(2, '0')}`;
             }
 
-            updateProgress(type, percent) {
-                const progressBar = document.getElementById(`${type}Progress`);
-                const percentText = document.getElementById(`${type}Percent`);
-                
-                progressBar.style.width = `${percent}%`;
-                percentText.textContent = `${percent}%`;
+            updateStatus(status, queuePosition = null) {
+                document.getElementById('currentStatusText').textContent = status;
+                if (queuePosition !== null) {
+                    document.getElementById('queuePositionText').textContent = queuePosition;
+                    const queueIndicator = document.getElementById('queueIndicator');
+                    if (queuePosition > 0) {
+                        queueIndicator.style.width = '100%';
+                        queueIndicator.style.background = 'linear-gradient(90deg, #ff6b6b, #ee5a24)';
+                    } else {
+                        queueIndicator.style.width = '0%';
+                    }
+                }
             }
 
             async prepareConversion() {
@@ -659,9 +666,8 @@
                         const data = await response.json();
 
                         if (response.ok) {
-                            this.updateStatus(data.status);
-                            this.updateProgress('download', data.download_progress);
-                            this.updateProgress('convert', data.conversion_progress);
+                            this.updateStatus(data.status, data.queue_position);
+                            document.getElementById('currentStatus').textContent = data.status;
 
                             if (data.status === 'completed' && data.download_url) {
                                 this.showDownloadButton(data.download_url);
@@ -691,8 +697,8 @@
                 this.conversionId = null;
                 document.getElementById('convertBtn').disabled = true;
                 document.getElementById('downloadSection').style.display = 'none';
-                this.updateProgress('download', 0);
-                this.updateProgress('convert', 0);
+                this.updateStatus('Ready');
+                document.getElementById('queuePositionText').textContent = '-';
                 this.updateStatus('Ready');
                 document.getElementById('conversionId').textContent = 'Not started';
                 document.getElementById('videoTitle').textContent = '-';
