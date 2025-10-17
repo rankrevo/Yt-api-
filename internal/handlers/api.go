@@ -331,6 +331,20 @@ func (a *API) handleConvert(job queue.Job) {
 	if err != nil {
 		return
 	}
+    // Attempt to hydrate missing SourcePath from the shared asset cache.
+    // This allows new sessions for the same URL to convert immediately
+    // without waiting for a redundant download or re-enqueue loops.
+    if s.AssetHash == "" {
+        s.AssetHash = util.HashString(util.CanonicalVideoID(s.URL))
+    }
+    if s.SourcePath == "" {
+        if src, state, ok, _ := a.sessions.GetAsset(ctx, s.AssetHash); ok && src != "" && state == string(models.StateDownloaded) {
+            s.SourcePath = src
+            s.State = models.StateDownloaded
+            s.DownloadProgress = 100
+            _ = a.sessions.UpdateSession(ctx, s)
+        }
+    }
 	// Wait until download finishes; if not ready, re-enqueue shortly
 	if s.SourcePath == "" || s.State == models.StateDownloading || s.State == models.StatePreparing || s.State == models.StateCreated {
 		go func(j queue.Job) {
